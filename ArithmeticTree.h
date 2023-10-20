@@ -17,7 +17,7 @@ typedef struct OpNode {
     unsigned long long value; // the value of the address when the operation is done
     // value = not_flag ? not factor * op(left, right) : factor * op(left, right);
     int                not_flag;
-    long long          factor;
+    double             factor;
     int                op; // operator (operator is a reserved name in C++)
     int                operand_count; // 0 for leaves.
     OpNode*            left; // left child
@@ -48,12 +48,21 @@ public:
     // get the trees whose root values are the parameter result
     virtual bool GetForestByResult(std::vector<OpNode*>& result_forest, unsigned long long result) = 0;
     // add a one register operation. {push, pop} are not one register operations, for they involves memory I/O.
-    virtual bool AddNode(int op, unsigned long long reg_addr, unsigned long long reg_value) = 0;
+    virtual bool AddNode(
+        unsigned long long ins_addr,
+        int                op,
+        unsigned long long reg_addr,
+        unsigned long long reg_value) = 0;
     // add a two register operation including {push, pop}
-    virtual bool AddNode(int op, int des_type, unsigned long long des_addr, unsigned long long des_value,
+    virtual bool AddNode(
+        unsigned long long ins_addr,
+        int                op,
+        int                des_type,
+        unsigned long long des_addr,
+        unsigned long long des_value,
         int src_type, unsigned long long src_addr, unsigned long long src_value) = 0;
     // set node factor
-    virtual bool SetNodeFactor(unsigned long long reg, unsigned long long factor) = 0;
+    virtual bool SetNodeFactor(unsigned long long reg, double factor) = 0;
     // delete a tree by node, return true if the tree to delete is found
     virtual bool DeleteTree(OpNode* node) = 0;
     // do reduction to the forest
