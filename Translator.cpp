@@ -1,7 +1,7 @@
 #include "Translator.h"
 #define ZYDIS_STATIC_BUILD
 extern "C" {
-#include "Zydis.h"
+#include "zydis/Zydis.h"
 }
 
 const char* TranslateOprator(unsigned long Opcode) {

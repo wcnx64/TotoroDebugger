@@ -1,0 +1,10 @@
+#ifndef _SETTINGS_H_
+#define _SETTINGS_H_
+
+//#define TEST_VMP_INLINE_PROTECTED_AES
+//#define TEST_UNPROTECTED_AES
+#define TEST_VMP_PATCH
+
+//#define USE_CONFIG_FILE
+
+#endif // _SETTINGS_H_

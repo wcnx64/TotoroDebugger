@@ -17,6 +17,7 @@ class NumberFilter : public INumberFilter {
 public:
 	NumberFilter();
 	~NumberFilter();
+	void Reset();
 	bool IsDropULL(unsigned long long value);
 	void SetDefault(bool retain);
 	void AddRuleEqualULL(bool retain, unsigned long long value);
@@ -34,6 +35,10 @@ NumberFilter::NumberFilter() : default_retain(true) {
 }
 
 NumberFilter::~NumberFilter() {
+	this->Reset();
+}
+
+void NumberFilter::Reset() {
 	this->rules.clear();
 }
 
@@ -149,8 +154,8 @@ void NumberFilter::AddRuleBetweenULL(bool retain,
 }
 
 
-INumberFilter* MakeNumberFilter() {
-	return new(std::nothrow)NumberFilter();
+INumberFilter* CreateNumberFilter() {
+	return new(std::nothrow) NumberFilter();
 }
 
 void DestroyNumberFilter(INumberFilter* filter) {

@@ -119,12 +119,17 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <AdditionalLibraryDirectories>lib</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -132,33 +137,43 @@
     <ClCompile Include="ArithmeticTree.cpp" />
     <ClCompile Include="debug.cpp" />
     <ClCompile Include="Decoder.cpp" />
+    <ClCompile Include="dependencies.c" />
     <ClCompile Include="filter.cpp" />
+    <ClCompile Include="ForestReducer.cpp" />
     <ClCompile Include="hack_aes.c" />
+    <ClCompile Include="ImagePatcher.cpp" />
     <ClCompile Include="InstructionTrace.cpp" />
-    <ClCompile Include="IO.cpp" />
+    <ClCompile Include="io.cpp" />
     <ClCompile Include="MemoryTracer.cpp" />
     <ClCompile Include="SerialGenerator.cpp" />
+    <ClCompile Include="Assembler.cpp" />
+    <ClCompile Include="snapshot.cpp" />
     <ClCompile Include="TotoroDebugger.cpp" />
     <ClCompile Include="Op.cpp" />
     <ClCompile Include="Translator.cpp" />
     <ClCompile Include="TreeReducer.cpp" />
-    <ClCompile Include="Zydis.c" />
+    <ClCompile Include="vm.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="alu.h" />
     <ClInclude Include="ArithmeticTree.h" />
+    <ClInclude Include="ForestReducer.h" />
+    <ClInclude Include="ImagePatcher.h" />
+    <ClInclude Include="settings.h" />
     <ClInclude Include="debug.h" />
     <ClInclude Include="Decoder.h" />
     <ClInclude Include="filter.h" />
     <ClInclude Include="hack_aes.h" />
     <ClInclude Include="InstructionTrace.h" />
-    <ClInclude Include="IO.h" />
+    <ClInclude Include="io.h" />
     <ClInclude Include="MemoryTracer.h" />
     <ClInclude Include="Op.h" />
     <ClInclude Include="SerialGenerator.h" />
+    <ClInclude Include="Assembler.h" />
+    <ClInclude Include="snapshot.h" />
     <ClInclude Include="Translator.h" />
     <ClInclude Include="TreeReducer.h" />
-    <ClInclude Include="Zydis.h" />
+    <ClInclude Include="vm.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

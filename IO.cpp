@@ -2,8 +2,13 @@
 #include "IO.h"
 #define ZYDIS_STATIC_BUILD
 extern "C" {
-#include "Zydis.h"
+#include "zydis/Zydis.h"
 }
+
+
+///
+/// Process I/O
+///
 
 typedef struct TDbgCreateProcessInfo {
     BOOL           Init;
@@ -18,7 +23,7 @@ static TDbgCreateProcessInfo g_tdbgCreateProcessInfo;
 #define HTHD  g_tdbgCreateProcessInfo.ThreadHandle
 #define BASE  g_tdbgCreateProcessInfo.BaseOfImage
 
-void SetDbgCreateProcessInfo(
+void IoSetCreateProcessInfo(
     HANDLE ProcessHandle,
     HANDLE ThreadHandle,
     unsigned char* BaseOfImage,
@@ -38,7 +43,11 @@ HANDLE IoGetThreadHandle() {
     return HTHD;
 }
 
-unsigned long long IoGetRegisterLength(unsigned long reg) {
+HANDLE IoGetProcessHandle() {
+    return HPROC;
+}
+
+unsigned char IoGetRegisterWidth(unsigned long reg) {
     switch ((ZydisRegister)reg) {
     case ZYDIS_REGISTER_RAX:
     case ZYDIS_REGISTER_RCX:
@@ -197,6 +206,94 @@ unsigned long long IoGetRegisterMask(unsigned long reg) {
     return 0;
 }
 
+unsigned long IoGet64bitRegister(unsigned long reg) {
+    switch ((ZydisRegister)reg) {
+    case ZYDIS_REGISTER_RAX:
+    case ZYDIS_REGISTER_EAX:
+    case ZYDIS_REGISTER_AX:
+    case ZYDIS_REGISTER_AL:
+    case ZYDIS_REGISTER_AH:
+        return ZYDIS_REGISTER_RAX;
+    case ZYDIS_REGISTER_RCX:
+    case ZYDIS_REGISTER_ECX:
+    case ZYDIS_REGISTER_CX:
+    case ZYDIS_REGISTER_CL:
+    case ZYDIS_REGISTER_CH:
+        return ZYDIS_REGISTER_RCX;
+    case ZYDIS_REGISTER_RDX:
+    case ZYDIS_REGISTER_EDX:
+    case ZYDIS_REGISTER_DX:
+    case ZYDIS_REGISTER_DL:
+    case ZYDIS_REGISTER_DH:
+        return ZYDIS_REGISTER_RDX;
+    case ZYDIS_REGISTER_RBX:
+    case ZYDIS_REGISTER_EBX:
+    case ZYDIS_REGISTER_BX:
+    case ZYDIS_REGISTER_BL:
+    case ZYDIS_REGISTER_BH:
+        return ZYDIS_REGISTER_RBX;
+    case ZYDIS_REGISTER_RSP:
+    case ZYDIS_REGISTER_ESP:
+    case ZYDIS_REGISTER_SPL:
+        return ZYDIS_REGISTER_RSP;
+    case ZYDIS_REGISTER_RBP:
+    case ZYDIS_REGISTER_EBP:
+    case ZYDIS_REGISTER_BPL:
+        return ZYDIS_REGISTER_RBP;
+    case ZYDIS_REGISTER_RSI:
+    case ZYDIS_REGISTER_ESI:
+    case ZYDIS_REGISTER_SIL:
+        return ZYDIS_REGISTER_RSI;
+    case ZYDIS_REGISTER_RDI:
+    case ZYDIS_REGISTER_EDI:
+    case ZYDIS_REGISTER_DIL:
+        return ZYDIS_REGISTER_RDI;
+    case ZYDIS_REGISTER_R8:
+    case ZYDIS_REGISTER_R8D:
+    case ZYDIS_REGISTER_R8W:
+    case ZYDIS_REGISTER_R8B:
+        return ZYDIS_REGISTER_R8;
+    case ZYDIS_REGISTER_R9:
+    case ZYDIS_REGISTER_R9D:
+    case ZYDIS_REGISTER_R9W:
+    case ZYDIS_REGISTER_R9B:
+        return ZYDIS_REGISTER_R9;
+    case ZYDIS_REGISTER_R10:
+    case ZYDIS_REGISTER_R10D:
+    case ZYDIS_REGISTER_R10W:
+    case ZYDIS_REGISTER_R10B:
+        return ZYDIS_REGISTER_R10;
+    case ZYDIS_REGISTER_R11:
+    case ZYDIS_REGISTER_R11D:
+    case ZYDIS_REGISTER_R11W:
+    case ZYDIS_REGISTER_R11B:
+        return ZYDIS_REGISTER_R11;
+    case ZYDIS_REGISTER_R12:
+    case ZYDIS_REGISTER_R12D:
+    case ZYDIS_REGISTER_R12W:
+    case ZYDIS_REGISTER_R12B:
+        return ZYDIS_REGISTER_R12;
+    case ZYDIS_REGISTER_R13:
+    case ZYDIS_REGISTER_R13D:
+    case ZYDIS_REGISTER_R13W:
+    case ZYDIS_REGISTER_R13B:
+        return ZYDIS_REGISTER_R13;
+    case ZYDIS_REGISTER_R14:
+    case ZYDIS_REGISTER_R14D:
+    case ZYDIS_REGISTER_R14W:
+    case ZYDIS_REGISTER_R14B:
+        return ZYDIS_REGISTER_R14;
+    case ZYDIS_REGISTER_R15:
+    case ZYDIS_REGISTER_R15D:
+    case ZYDIS_REGISTER_R15W:
+    case ZYDIS_REGISTER_R15B:
+        return ZYDIS_REGISTER_R15;
+    case ZYDIS_REGISTER_RFLAGS:
+        return ZYDIS_REGISTER_RFLAGS;
+    }
+    return reg;
+}
+
 unsigned long long IoReadRegister(unsigned long Reg) {
     CONTEXT ctx = { 0 };
     ctx.ContextFlags = CONTEXT_ALL;
@@ -340,6 +437,8 @@ unsigned long long IoReadRegister(unsigned long Reg) {
         return ctx.R15 & 0xff;
     case ZYDIS_REGISTER_RFLAGS:
         return ctx.EFlags;
+    case ZYDIS_REGISTER_RIP:
+        return ctx.Rip;
     }
     return 0;
 }
@@ -452,146 +551,14 @@ void IoWriteRegister(unsigned long reg, unsigned long long value) {
     SetThreadContext(HTHD, &ctx);
 }
 
-unsigned long IoGet64bitRegister(unsigned long reg) {
-    switch ((ZydisRegister)reg) {
-    case ZYDIS_REGISTER_RAX:
-    case ZYDIS_REGISTER_EAX:
-    case ZYDIS_REGISTER_AX:
-    case ZYDIS_REGISTER_AL:
-    case ZYDIS_REGISTER_AH:
-        return ZYDIS_REGISTER_RAX;
-    case ZYDIS_REGISTER_RCX:
-    case ZYDIS_REGISTER_ECX:
-    case ZYDIS_REGISTER_CX:
-    case ZYDIS_REGISTER_CL:
-    case ZYDIS_REGISTER_CH:
-        return ZYDIS_REGISTER_RCX;
-    case ZYDIS_REGISTER_RDX:
-    case ZYDIS_REGISTER_EDX:
-    case ZYDIS_REGISTER_DX:
-    case ZYDIS_REGISTER_DL:
-    case ZYDIS_REGISTER_DH:
-        return ZYDIS_REGISTER_RDX;
-    case ZYDIS_REGISTER_RBX:
-    case ZYDIS_REGISTER_EBX:
-    case ZYDIS_REGISTER_BX:
-    case ZYDIS_REGISTER_BL:
-    case ZYDIS_REGISTER_BH:
-        return ZYDIS_REGISTER_RBX;
-    case ZYDIS_REGISTER_RSP:
-    case ZYDIS_REGISTER_ESP:
-    case ZYDIS_REGISTER_SPL:
-        return ZYDIS_REGISTER_RSP;
-    case ZYDIS_REGISTER_RBP:
-    case ZYDIS_REGISTER_EBP:
-    case ZYDIS_REGISTER_BPL:
-        return ZYDIS_REGISTER_RBP;
-    case ZYDIS_REGISTER_RSI:
-    case ZYDIS_REGISTER_ESI:
-    case ZYDIS_REGISTER_SIL:
-        return ZYDIS_REGISTER_RSI;
-    case ZYDIS_REGISTER_RDI:
-    case ZYDIS_REGISTER_EDI:
-    case ZYDIS_REGISTER_DIL:
-        return ZYDIS_REGISTER_RDI;
-    case ZYDIS_REGISTER_R8:
-    case ZYDIS_REGISTER_R8D:
-    case ZYDIS_REGISTER_R8W:
-    case ZYDIS_REGISTER_R8B:
-        return ZYDIS_REGISTER_R8;
-    case ZYDIS_REGISTER_R9:
-    case ZYDIS_REGISTER_R9D:
-    case ZYDIS_REGISTER_R9W:
-    case ZYDIS_REGISTER_R9B:
-        return ZYDIS_REGISTER_R9;
-    case ZYDIS_REGISTER_R10:
-    case ZYDIS_REGISTER_R10D:
-    case ZYDIS_REGISTER_R10W:
-    case ZYDIS_REGISTER_R10B:
-        return ZYDIS_REGISTER_R10;
-    case ZYDIS_REGISTER_R11:
-    case ZYDIS_REGISTER_R11D:
-    case ZYDIS_REGISTER_R11W:
-    case ZYDIS_REGISTER_R11B:
-        return ZYDIS_REGISTER_R11;
-    case ZYDIS_REGISTER_R12:
-    case ZYDIS_REGISTER_R12D:
-    case ZYDIS_REGISTER_R12W:
-    case ZYDIS_REGISTER_R12B:
-        return ZYDIS_REGISTER_R12;
-    case ZYDIS_REGISTER_R13:
-    case ZYDIS_REGISTER_R13D:
-    case ZYDIS_REGISTER_R13W:
-    case ZYDIS_REGISTER_R13B:
-        return ZYDIS_REGISTER_R13;
-    case ZYDIS_REGISTER_R14:
-    case ZYDIS_REGISTER_R14D:
-    case ZYDIS_REGISTER_R14W:
-    case ZYDIS_REGISTER_R14B:
-        return ZYDIS_REGISTER_R14;
-    case ZYDIS_REGISTER_R15:
-    case ZYDIS_REGISTER_R15D:
-    case ZYDIS_REGISTER_R15W:
-    case ZYDIS_REGISTER_R15B:
-        return ZYDIS_REGISTER_R15;
-    case ZYDIS_REGISTER_RFLAGS:
-        return ZYDIS_REGISTER_RFLAGS;
-    }
-    return reg;
-}
-
-unsigned long IoGetRegisterWidth(unsigned long reg) {
-    CONTEXT ctx = { 0 };
-    ctx.ContextFlags = CONTEXT_ALL;
-    GetThreadContext(HTHD, &ctx);
-    switch ((ZydisRegister)reg) {
-    case ZYDIS_REGISTER_RAX:
-    case ZYDIS_REGISTER_RCX:
-    case ZYDIS_REGISTER_RDX:
-    case ZYDIS_REGISTER_RBX:
-    case ZYDIS_REGISTER_RSP:
-    case ZYDIS_REGISTER_RBP:
-    case ZYDIS_REGISTER_RSI:
-    case ZYDIS_REGISTER_RDI:
-    case ZYDIS_REGISTER_R8:
-    case ZYDIS_REGISTER_R9:
-    case ZYDIS_REGISTER_R10:
-    case ZYDIS_REGISTER_R11:
-    case ZYDIS_REGISTER_R12:
-    case ZYDIS_REGISTER_R13:
-    case ZYDIS_REGISTER_R14:
-    case ZYDIS_REGISTER_R15:
-    case ZYDIS_REGISTER_RFLAGS:
-        return 8;
-    case ZYDIS_REGISTER_EAX:
-    case ZYDIS_REGISTER_ECX:
-    case ZYDIS_REGISTER_EDX:
-    case ZYDIS_REGISTER_EBX:
-    case ZYDIS_REGISTER_ESP:
-    case ZYDIS_REGISTER_EBP:
-    case ZYDIS_REGISTER_ESI:
-    case ZYDIS_REGISTER_EDI:
-    case ZYDIS_REGISTER_R8D:
-    case ZYDIS_REGISTER_R9D:
-    case ZYDIS_REGISTER_R10D:
-    case ZYDIS_REGISTER_R11D:
-    case ZYDIS_REGISTER_R12D:
-    case ZYDIS_REGISTER_R13D:
-    case ZYDIS_REGISTER_R14D:
-    case ZYDIS_REGISTER_R15D:
-        return 4;
-    }
-    return 0;
-}
-
-void IoReadProcessMemory(unsigned long long Address, void* Buf, unsigned long Len) {
+bool IoReadProcessMemory(unsigned long long Address, void* Buf, unsigned long Len) {
     unsigned long long Length = 0;
-    ReadProcessMemory(HPROC, (char*)Address, Buf, Len, &Length);
+    return ReadProcessMemory(HPROC, (char*)Address, Buf, Len, &Length);
 }
 
-void IoWriteProcessMemory(unsigned long long Address, void* Buf, unsigned long Len) {
+bool IoWriteProcessMemory(unsigned long long Address, void* Buf, unsigned long Len) {
     unsigned long long Length = 0;
-    WriteProcessMemory(HPROC, (char*)Address, Buf, Len, &Length);
+    return WriteProcessMemory(HPROC, (char*)Address, Buf, Len, &Length);
 }
 
 static char*     SnapshotMemory = NULL;
@@ -616,12 +583,4 @@ void IoReadSnapshotProcessMemory(unsigned long long Address, void* Buf, unsigned
     else {
         memcpy(Buf, SnapshotMemory + (Address - SnapshotMemoryBase), Len);
     }
-}
-
-void DbgGoToDelta(int Delta) {
-    CONTEXT ctx = { 0 };
-    ctx.ContextFlags = CONTEXT_ALL;
-    GetThreadContext(HTHD, &ctx);
-    ctx.Rip = (long long)ctx.Rip + Delta;
-    SetThreadContext(HTHD, &ctx);
 }

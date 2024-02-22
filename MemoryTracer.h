@@ -22,7 +22,7 @@ typedef struct MemoryItem {
 	unsigned long long ins_addr; // instruction address that accessed the memory address
 	bool               enabled_callback; // whether the callback is enabled, debuggers switch callback states rather than removing / re-adding them
 	MemoryCallback     callback; // callback, usually used by a breakpoint
-	void* callback_user_data; // transfer data to callback
+	void*              callback_user_data; // transfer data to callback
 } MemoryItem, *PMemoryItem;
 
 // an infrastructure of memory tracing, supporting the Layered Memory Tracing algorithm
@@ -31,8 +31,6 @@ public:
 	virtual ~IMemoryTracer() {};
 	// add layer
 	virtual bool Add(int layer) = 0;
-	// add memory
-	virtual bool Add(PMemoryItem mem) = 0;
 	// add memory
 	virtual bool Add(
 		unsigned long long addr,
@@ -63,7 +61,7 @@ public:
 	// enumerate mems in the layer - first
 	virtual PMemoryItem FirstMem(int layer) = 0;
 	// enumerate mems in the layer - next
-	virtual PMemoryItem MextMem(int layer) = 0;
+	virtual PMemoryItem NextMem(int layer) = 0;
 	// get callback assocaited with addr
 	// return (false, nullptr) if the addr is not registered or
 	// it doesn't have a callback.
@@ -87,8 +85,8 @@ public:
 };
 
 // make a memory tracer and return the interface
-IMemoryTracer* MakeMemoryTracer();
-// destroy the memory tracer made by MakeMemoryTracer
+IMemoryTracer* CreateMemoryTracer();
+// destroy the memory tracer made by CreateMemoryTracer
 void DestoryMemoryTracer(IMemoryTracer* tracer);
 
 
@@ -108,7 +106,7 @@ public:
 	// clear
 	virtual void Clear() = 0;
 	// feed data
-	virtual bool AnalyzeData(void* data, int argc, void* argv[]) = 0;
+	virtual void AnalyzeData(void* data, int argc, void* argv[]) = 0;
 	// get memory blocks
 	virtual std::vector<MemoryBlock> GetMemoryBlocks(int layer) = 0;
 	// print memory blocks
@@ -116,8 +114,8 @@ public:
 };
 
 // make a memory block analyzer and return the interface
-IMemoryBlockAnalyzer* MakeMemoryBlockAnalyzer();
-// destroy the memory block analyzer made by MakeMemoryBlockTracer
+IMemoryBlockAnalyzer* CreateMemoryBlockAnalyzer();
+// destroy the memory block analyzer made by CreateMemoryBlockTracer
 void DestoryMemoryBlockAnalyzer(IMemoryBlockAnalyzer* analyzer);
 
 #endif // _MEMORY_TRACER_H_

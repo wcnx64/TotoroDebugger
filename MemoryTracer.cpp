@@ -15,22 +15,22 @@ typedef struct LMemItem : MemoryItem {
 	~LMemItem() {}
 	bool AddAssociated(LMemItem* mem) {
 		// check duplication
-		for (auto i = this->associated.begin(); i != this->associated.end(); i++)
+		for (auto i = associated.begin(); i != associated.end(); i++)
 			if (*i == mem)
 				return true; // already associated
 		try {
 			// associated by new mem
-			this->associated.push_back(mem);
+			associated.push_back(mem);
 		}
 		catch (...) { return false; }
 		return true;
 	}
 	void Print() {
-		printf("0x%llx\n", this->addr);
+		printf("0x%llx\n", addr);
 	}
 	void PrintAssociated() {
 		printf("  [");
-		for (auto i = this->associated.begin(); i != this->associated.end(); i++)
+		for (auto i = associated.begin(); i != associated.end(); i++)
 			printf("0x%llx, ", (*i)->addr);
 		printf("]\n");
 	}
@@ -38,19 +38,18 @@ typedef struct LMemItem : MemoryItem {
 
 // a layer of memories
 typedef struct MemoryLayer {
-	int                             layer;
-	std::vector<LMemItem>           mems;
-	std::vector<LMemItem>::iterator enum_mem_iter;
-	MemoryLayer() : layer(0) {}
+	int                    layer;
+	std::vector<PLMemItem> mems;
+	int                    enum_mem_pos;
+	MemoryLayer() : layer(0), enum_mem_pos(0) {}
 } MemoryLayer, *PMemoryLayer;
 
 class MemoryTracer : public IMemoryTracer {
 public:
+	MemoryTracer();
 	virtual ~MemoryTracer();
 	// add layer
 	bool Add(int layer);
-	// add memory
-	bool Add(PMemoryItem mem);
 	// add memory
 	bool Add(
 		unsigned long long addr,
@@ -81,7 +80,7 @@ public:
 	// enumerate mems in the layer - first
 	PMemoryItem FirstMem(int layer);
 	// enumerate mems in the layer - next
-	PMemoryItem MextMem(int layer);
+	PMemoryItem NextMem(int layer);
 	// get callback assocaited with addr
 	// return (false, nullptr) if the addr is not registered or
 	// it doesn't have a callback.
@@ -115,45 +114,31 @@ public:
 	PLMemItem GetMem(unsigned long long addr, int layer);
 protected:
 	// registered memories
-	std::vector<MemoryLayer>           layers;
+	std::vector<PMemoryLayer> layers;
 	// for enumeration
-	std::vector<MemoryLayer>::iterator enum_layer_iter;
+	int enum_layer_pos;
 };
 
+MemoryTracer::MemoryTracer() : enum_layer_pos(0) {
+}
+
 MemoryTracer::~MemoryTracer() {
-	this->Clear();
+	Clear();
 }
 
 // add layer
 bool MemoryTracer::Add(int layer) {
 	// avoid duplication
-	if (this->GetLayer(layer)) {
+	if (GetLayer(layer)) {
 		return false;
 	}
-	MemoryLayer new_layer;
-	new_layer.layer = layer;
-	new_layer.enum_mem_iter = new_layer.mems.end();
-	try {
-		this->layers.push_back(new_layer);
-	}
-	catch (...) {
+	PMemoryLayer new_layer = new(std::nothrow) MemoryLayer();
+	if (new_layer == nullptr) {
 		return false;
 	}
+	new_layer->layer = layer;
+	layers.push_back(new_layer);
 	return true;
-}
-
-// add memory
-bool MemoryTracer::Add(PMemoryItem _mem) {
-	auto target_layer = this->GetLayer(_mem->layer);
-	// avoid duplication
-	if (target_layer) {
-		if (this->GetMem(_mem->addr, target_layer))
-			return false;
-	}
-	// add a new item in transaction
-	LMemItem mem(0);
-	memcpy(&mem, _mem, sizeof(mem));
-	return this->AddNewMem(&mem, target_layer);
 }
 
 // add memory
@@ -163,18 +148,20 @@ bool MemoryTracer::Add(
 	bool               enable_callback,
 	MemoryCallback     callback,
 	void* callback_user_data) {
-	auto target_layer = this->GetLayer(layer);
+	auto target_layer = GetLayer(layer);
 	// avoid duplication
 	if (target_layer) {
-		if (this->GetMem(addr, target_layer))
+		if (GetMem(addr, target_layer))
 			return false;
 	}
 	// add a new item in transaction
-	LMemItem mem(addr);
-	mem.layer = layer;
-	mem.enabled_callback = enable_callback;
-	mem.callback = callback;
-	return this->AddNewMem(&mem, target_layer);
+	PLMemItem mem = new(std::nothrow) LMemItem(addr);
+	if (mem == nullptr)
+		return false;
+	mem->layer = layer;
+	mem->enabled_callback = enable_callback;
+	mem->callback = callback;
+	return AddNewMem(mem, target_layer);
 }
 
 // add memory
@@ -182,25 +169,27 @@ bool MemoryTracer::Add(
 	unsigned long long addr,
 	int                layer,
 	bool               ins_addr) {
-	auto target_layer = this->GetLayer(layer);
+	auto target_layer = GetLayer(layer);
 	// avoid duplication
 	if (target_layer) {
-		if (this->GetMem(addr, target_layer))
+		if (GetMem(addr, target_layer))
 			return false;
 	}
 	// add a new item in transaction
-	LMemItem mem(addr);
-	mem.layer = layer;
-	mem.ins_addr = ins_addr;
-	return this->AddNewMem(&mem, target_layer);
+	PLMemItem mem = new(std::nothrow) LMemItem(addr);
+	if (mem == nullptr)
+		return false;
+	mem->layer = layer;
+	mem->ins_addr = ins_addr;
+	return AddNewMem(mem, target_layer);
 }
 
 // delete layer
 bool MemoryTracer::Delete(int layer) {
-	for (auto i = this->layers.begin(); i != this->layers.end();) {
-		if (i->layer == layer) {
-			i->mems.clear();
-			i = this->layers.erase(i);
+	for (auto i = layers.begin(); i != layers.end();) {
+		if ((*i)->layer == layer) {
+			(*i)->mems.clear();
+			i = layers.erase(i);
 			return true;
 		}
 		else { i++; }
@@ -210,10 +199,10 @@ bool MemoryTracer::Delete(int layer) {
 
 // delete memory in given layer
 bool MemoryTracer::Delete(unsigned long long addr, int layer) {
-	auto target_layer = this->GetLayer(layer);
+	auto target_layer = GetLayer(layer);
 	if (target_layer) {
 		for (auto i = target_layer->mems.begin(); i != target_layer->mems.end();) {
-			if (i->addr == addr) {
+			if ((*i)->addr == addr) {
 				i = target_layer->mems.erase(i);
 				return true;
 			}
@@ -225,17 +214,17 @@ bool MemoryTracer::Delete(unsigned long long addr, int layer) {
 
 // clear all
 void MemoryTracer::Clear() {
-	for (auto i = this->layers.begin(); i != this->layers.end(); i++) {
-		i->mems.clear();
+	for (auto i = layers.begin(); i != layers.end(); i++) {
+		(*i)->mems.clear();
 	}
-	this->layers.clear();
+	layers.clear();
 }
 
 // clear layer
 void MemoryTracer::Clear(int layer) {
-	for (auto i = this->layers.begin(); i != this->layers.end(); i++) {
-		if (i->layer == layer) {
-			i->mems.clear();
+	for (auto i = layers.begin(); i != layers.end(); i++) {
+		if ((*i)->layer == layer) {
+			(*i)->mems.clear();
 			break;
 		}
 	}
@@ -244,60 +233,63 @@ void MemoryTracer::Clear(int layer) {
 // modify
 // you can modify the item after get the pointer
 PMemoryItem MemoryTracer::Get(unsigned long long addr, int layer) {
-	auto target_layer = this->GetLayer(layer);
+	auto target_layer = GetLayer(layer);
 	// avoid duplication
 	if (target_layer) {
-		return this->GetMem(addr, target_layer);
+		return GetMem(addr, target_layer);
 	}
 	return nullptr;
 }
 
 // enumerate layers - first
 bool MemoryTracer::FirstLayer(int& layer) {
-	this->enum_layer_iter = this->layers.begin();
-	if (this->enum_layer_iter == this->layers.end()) {
+	enum_layer_pos = 0;
+	if (enum_layer_pos >= layers.size()) {
 		return false;
 	}
-	layer = this->enum_layer_iter->layer;
+	layer = layers[enum_layer_pos]->layer;
 	return true;
 }
 
 // enumerate layers - next
 bool MemoryTracer::MextLayer(int& layer) {
-	this->enum_layer_iter++;
-	if (this->enum_layer_iter == this->layers.end())
+	enum_layer_pos++;
+	if (enum_layer_pos >= layers.size()) {
 		return false;
-	layer = this->enum_layer_iter->layer;
+	}
+	layer = layers[enum_layer_pos]->layer;
 	return true;
 }
 
 // enumerate mems in the layer - first
 PMemoryItem MemoryTracer::FirstMem(int layer) {
-	auto target_layer = this->GetLayer(layer);
+	auto target_layer = GetLayer(layer);
 	if (target_layer == nullptr)
 		return nullptr;
-	target_layer->enum_mem_iter = target_layer->mems.begin();
-	if (target_layer->enum_mem_iter == target_layer->mems.end())
+	target_layer->enum_mem_pos = 0;
+	if (target_layer->enum_mem_pos >= target_layer->mems.size()) {
 		return nullptr;
-	return &*target_layer->enum_mem_iter;
+	}
+	return target_layer->mems[target_layer->enum_mem_pos];
 }
 
 // enumerate mems in the layer - next
-PMemoryItem MemoryTracer::MextMem(int layer) {
-	auto target_layer = this->GetLayer(layer);
+PMemoryItem MemoryTracer::NextMem(int layer) {
+	auto target_layer = GetLayer(layer);
 	if (target_layer == nullptr)
 		return nullptr;
-	target_layer->enum_mem_iter++;
-	if (target_layer->enum_mem_iter == target_layer->mems.end())
+	target_layer->enum_mem_pos++;
+	if (target_layer->enum_mem_pos >= target_layer->mems.size()) {
 		return nullptr;
-	return &*target_layer->enum_mem_iter;
+	}
+	return target_layer->mems[target_layer->enum_mem_pos];
 }
 
 // get callback assocaited with addr
 // return (false, nullptr) if the addr is not registered or
 // it doesn't have a callback.
 std::pair<bool, MemoryCallback> MemoryTracer::GetCallback(unsigned long long addr, int layer) {
-	auto mem = this->Get(addr, layer);
+	auto mem = Get(addr, layer);
 	if (mem == nullptr)
 		return std::pair<bool, MemoryCallback>(false, nullptr);
 	return std::pair<bool, MemoryCallback>(mem->enabled_callback, mem->callback);
@@ -305,7 +297,7 @@ std::pair<bool, MemoryCallback> MemoryTracer::GetCallback(unsigned long long add
 
 // easy interface for callback, use Get for altering more things including callback address and user data
 bool MemoryTracer::EnableCallback(unsigned long long addr, int layer) {
-	auto mem = this->Get(addr, layer);
+	auto mem = Get(addr, layer);
 	if (mem == nullptr)
 		return false;
 	if (mem->callback == nullptr)
@@ -316,7 +308,7 @@ bool MemoryTracer::EnableCallback(unsigned long long addr, int layer) {
 
 // easy interface for callback, use Get for altering more things including callback address and user data
 bool MemoryTracer::DisableCallback(unsigned long long addr, int layer) {
-	auto mem = this->Get(addr, layer);
+	auto mem = Get(addr, layer);
 	if (mem == nullptr)
 		return false;
 	if (mem->callback == nullptr)
@@ -336,23 +328,23 @@ bool MemoryTracer::Associate(
 	int                src_layer,
 	unsigned long long src_ins_addr) {
 	// get destination memory item. the des mem must already exist
-	auto des_mem = this->GetMem(des_addr, des_layer);
+	auto des_mem = GetMem(des_addr, des_layer);
 	if (des_mem == nullptr)
 		return false;
 	do {
 		// check if the source memory is new
-		auto src_mem = this->GetMem(src_addr, src_layer);
+		auto src_mem = GetMem(src_addr, src_layer);
 		if (src_mem == nullptr)
 			break;
 		// associate existing src mem to des mem
 		return des_mem->AddAssociated(src_mem);
 	} while (false);
 	// register new mem
-	bool ret = this->Add(src_addr, src_layer, src_ins_addr);
+	bool ret = Add(src_addr, src_layer, src_ins_addr);
 	if (ret == false)
 		return false;
 	// get the registered one
-	auto src_mem = this->GetMem(src_addr, src_layer);
+	auto src_mem = GetMem(src_addr, src_layer);
 	if (src_mem == nullptr)
 		return false;
 	// associate new src mem to des mem
@@ -361,13 +353,13 @@ bool MemoryTracer::Associate(
 
 // print a layer
 void MemoryTracer::Print(int layer, bool print_associates) {
-	auto layer_ptr = this->GetLayer(layer);
+	auto layer_ptr = GetLayer(layer);
 	if (layer_ptr == nullptr)
 		return;
 	for (auto i = layer_ptr->mems.begin(); i != layer_ptr->mems.end(); i++) {
-		i->Print();
+		(*i)->Print();
 		if (print_associates)
-			i->PrintAssociated();
+			(*i)->PrintAssociated();
 	}
 }
 
@@ -377,33 +369,26 @@ void MemoryTracer::Print(int layer, bool print_associates) {
 bool MemoryTracer::AddNewMem(PLMemItem mem, PMemoryLayer layer) {
 	// add a new item in transaction
 	bool build_new_layer = false;
-	try {
-		// add a new layer
-		if (layer == nullptr) {
-			MemoryLayer new_layer;
-			new_layer.layer = mem->layer;
-			new_layer.enum_mem_iter = new_layer.mems.end();
-			this->layers.push_back(new_layer); // may cause exception
-			build_new_layer = true;
-			layer = &*(this->layers.end() - 1);
-		}
-		// add a mem item to its layer
-		layer->mems.push_back(*mem); // may cause exception
+	// add a new layer
+	if (layer == nullptr) {
+		PMemoryLayer new_layer = new(std::nothrow) MemoryLayer();
+		if (new_layer == nullptr)
+			return false;
+		new_layer->layer = mem->layer;
+		layers.push_back(new_layer);
+		build_new_layer = true;
+		layer = new_layer;
 	}
-	catch (...) {
-		// rollback
-		if (build_new_layer)
-			this->layers.erase(this->layers.end() - 1);
-		return false;
-	}
+	// add a mem item to its layer
+	layer->mems.push_back(mem);
 	return true;
 }
 
 // get layer
 PMemoryLayer MemoryTracer::GetLayer(int layer) {
-	for (auto i = this->layers.begin(); i != this->layers.end(); i++) {
-		if (i->layer == layer) {
-			return &*i;
+	for (auto i = layers.begin(); i != layers.end(); i++) {
+		if ((*i)->layer == layer) {
+			return *i;
 		}
 	}
 	return nullptr;
@@ -412,8 +397,8 @@ PMemoryLayer MemoryTracer::GetLayer(int layer) {
 // get memory in the given layer
 PLMemItem MemoryTracer::GetMem(unsigned long long addr, PMemoryLayer layer) {
 	for (auto i = layer->mems.begin(); i != layer->mems.end(); i++) {
-		if (i->addr == addr) {
-			return &*i;
+		if ((*i)->addr == addr) {
+			return *i;
 		}
 	}
 	return nullptr;
@@ -421,19 +406,19 @@ PLMemItem MemoryTracer::GetMem(unsigned long long addr, PMemoryLayer layer) {
 
 // get memory
 PLMemItem MemoryTracer::GetMem(unsigned long long addr, int layer) {
-	auto layer_ptr = this->GetLayer(layer);
+	auto layer_ptr = GetLayer(layer);
 	if (layer_ptr == nullptr)
 		return nullptr;
-	auto mem = this->GetMem(addr, layer_ptr);
+	auto mem = GetMem(addr, layer_ptr);
 	return mem;
 }
 
 // make a memory tracer and return the interface
-IMemoryTracer* MakeMemoryTracer() {
+IMemoryTracer* CreateMemoryTracer() {
 	return new MemoryTracer();
 }
 
-// destroy the memory tracer made by MakeMemoryTracer
+// destroy the memory tracer made by CreateMemoryTracer
 void DestoryMemoryTracer(IMemoryTracer* tracer) {
 	if (tracer)
 		delete tracer;
@@ -447,7 +432,7 @@ public:
 	// clear
 	void Clear();
 	// feed data
-	bool AnalyzeData(void* data, int argc, void* argv[]);
+	void AnalyzeData(void* data, int argc, void* argv[]);
 	// get memory blocks
 	std::vector<MemoryBlock> GetMemoryBlocks(int layer);
 	// print memory blocks
@@ -464,7 +449,7 @@ MemoryBlockAnalyzer::MemoryBlockAnalyzer() {
 }
 
 MemoryBlockAnalyzer::~MemoryBlockAnalyzer() {
-	this->Clear();
+	Clear();
 }
 
 // clear
@@ -472,11 +457,11 @@ void MemoryBlockAnalyzer::Clear() {
 	this->blocks.clear();
 }
 
-bool MemoryBlockAnalyzer::AnalyzeData(void* data, int argc, void* argv[]) {
+void MemoryBlockAnalyzer::AnalyzeData(void* data, int argc, void* argv[]) {
 	if (argc >= 1)
-		this->distance_threshold = (int)argv[0];
+		distance_threshold = (int)(unsigned long long)argv[0];
 	if (argc >= 2)
-		this->item_number_threshold = (int)argv[1];
+		item_number_threshold = (int)(unsigned long long)argv[1];
 	MemoryTracer* tracer = (MemoryTracer*)data;
 	int layer = 1;
 	while (true) {
@@ -485,33 +470,30 @@ bool MemoryBlockAnalyzer::AnalyzeData(void* data, int argc, void* argv[]) {
 			break;
 		// sort
 		std::sort(layer_ptr->mems.begin(), layer_ptr->mems.end(),
-			[](LMemItem& left, LMemItem& right) {return left.addr < right.addr; });
+			[](PLMemItem left, PLMemItem right) {return left->addr < right->addr; });
 		// look for memory blocks according to thresholds
 		unsigned long long cur_start_addr = 0;
 		int                cur_mem_count = 0;
 		for (auto i = layer_ptr->mems.begin(); i != layer_ptr->mems.end() - 1; i++) {
 			if (cur_mem_count == 0) // // no close mems are found
-				cur_start_addr = i->addr;
+				cur_start_addr = (*i)->addr;
 			// check distance
-			if ((i + 1)->addr - i->addr <= this->distance_threshold) {
+			if (((*i) + 1)->addr - (*i)->addr <= distance_threshold) {
 				if (cur_mem_count == 0) // the first pair of the current potential block
 					cur_mem_count = 2;
 				else // the current potential block grows
 					cur_mem_count++;
 			}
 			// check if it is the end of a block, as the distance is not within the threshold
-			else if (cur_mem_count >= this->item_number_threshold) {
+			else if (cur_mem_count >= item_number_threshold) {
 				// a new block is found
 				MemoryBlock block;
 				block.layer = layer;
 				block.start_addr = cur_start_addr;
-				block.end_addr = i->addr;
+				block.end_addr = (*i)->addr;
 				block.addr_count = cur_mem_count;
 				block.asoociated_to = layer - 1;
-				try {
-					this->blocks.push_back(block);
-				}
-				catch (...) { return false; };
+				this->blocks.push_back(block);
 				cur_mem_count = 0;
 			}
 			else {
@@ -519,29 +501,25 @@ bool MemoryBlockAnalyzer::AnalyzeData(void* data, int argc, void* argv[]) {
 			}
 		}
 		// the right most block
-		if (cur_mem_count >= this->item_number_threshold) {
+		if (cur_mem_count >= item_number_threshold) {
 			// a new block is found
 			MemoryBlock block;
 			block.layer = layer;
 			block.start_addr = cur_start_addr;
-			block.end_addr = (layer_ptr->mems.end() - 1)->addr;
+			block.end_addr = (*(layer_ptr->mems.end() - 1))->addr;
 			block.addr_count = cur_mem_count;
 			block.asoociated_to = layer - 1;
-			try {
-				this->blocks.push_back(block);
-			}
-			catch (...) { return false; };
+			this->blocks.push_back(block);
 		}
 		// next layer
 		layer++;
 	}
-	return true;
 }
 
 // get memory blocks
 std::vector<MemoryBlock> MemoryBlockAnalyzer::GetMemoryBlocks(int layer) {
 	std::vector<MemoryBlock> blocks;
-	for (auto i = this->blocks.begin(); i != this->blocks.end(); i++) {
+	for (auto i = blocks.begin(); i != blocks.end(); i++) {
 		if (i->layer == layer) {
 			try {
 				blocks.push_back(*i);
@@ -554,18 +532,18 @@ std::vector<MemoryBlock> MemoryBlockAnalyzer::GetMemoryBlocks(int layer) {
 
 // print memory blocks
 void MemoryBlockAnalyzer::Print() {
-	for (auto i = this->blocks.begin(); i != this->blocks.end(); i++) {
+	for (auto i = blocks.begin(); i != blocks.end(); i++) {
 		printf("[0x%llx, 0x%llx] #0x%lx  0x%lx -> 0x%lx\n",
 			i->start_addr, i->end_addr, i->addr_count, i->layer, i->asoociated_to);
 	}
 }
 
 // make a memory block analyzer and return the interface
-IMemoryBlockAnalyzer* MakeMemoryBlockAnalyzer() {
+IMemoryBlockAnalyzer* CreateMemoryBlockAnalyzer() {
 	return new MemoryBlockAnalyzer();
 }
 
-// destroy the memory block analyzer made by MakeMemoryBlockTracer
+// destroy the memory block analyzer made by CreateMemoryBlockTracer
 void DestoryMemoryBlockAnalyzer(IMemoryBlockAnalyzer* analyzer) {
 	if (analyzer)
 		delete analyzer;

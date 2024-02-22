@@ -3,7 +3,7 @@
 #include "alu.h"
 #define ZYDIS_STATIC_BUILD
 extern "C" {
-#include "Zydis.h"
+#include "zydis/Zydis.h"
 }
 
 bool ReduceMov(OpNode* node, bool is_root) {
@@ -13,7 +13,7 @@ bool ReduceMov(OpNode* node, bool is_root) {
 		modified |= ReduceMov(node->left, false);
 	if (node->right)
 		modified |= ReduceMov(node->right, false);
-	if (node->operand_count == 1 && node->op == ZYDIS_MNEMONIC_MOV && node->left) {
+	if (node->op == ZYDIS_MNEMONIC_MOV && node->left && node->right == nullptr) {
 		// node->left will be removed, subtrees of node->left will be connected to node
 		if (node->type == ZYDIS_OPERAND_TYPE_REGISTER) {
 			node->ReplaceNodeWithLelfChild();
@@ -24,15 +24,17 @@ bool ReduceMov(OpNode* node, bool is_root) {
 			modified = true;
 		}
 		else if (node->type == ZYDIS_OPERAND_TYPE_MEMORY && node->left->type == ZYDIS_OPERAND_TYPE_MEMORY) {
-			if (node->left->operand_count > 0) { // non-leaf, mov A, B -> replace B with A
+			if (node->left->left) { // non-leaf, mov A, B -> replace B with A
 				node->ReplaceNodeWithLelfChild(true);
 				modified = true;
 			}
-			else if (!is_root && node->left->operand_count == 0) { // non-root and leaf, mov A, B -> replace A with B
+			else if (!is_root && node->left->left == nullptr) { // non-root and leaf, mov A, B -> replace A with B
 				node->ReplaceNodeWithLelfChild();
 				modified = true;
 			}
 			// do nothing with root and leaf
+		}
+		else if (node->left->type == ZYDIS_OPERAND_TYPE_IMMEDIATE) { // immediate value. don't reduce
 		}
 		else { // invalid case, discard the subtree
 			node->type = ZYDIS_OPERAND_TYPE_UNUSED;
@@ -56,9 +58,9 @@ bool ReduceUnitaryArithmeticNodes(OpNode* node, bool is_root) {
 		modified |= ReduceUnitaryArithmeticNodes(node->left, false);
 	if (node->right)
 		modified |= ReduceUnitaryArithmeticNodes(node->right, false);
-	if (node->operand_count == 1 && node->left) {
+	if (node->left && node->right == nullptr) {
 		if (node->op == ZYDIS_MNEMONIC_NOT || node->op == ZYDIS_MNEMONIC_NEG) {
-			if (!is_root || node->left->operand_count > 0) { // do nothing when only a root and a leaf remaind
+			if (!is_root || node->left->left) { // do nothing when only a root and a leaf remaind
 				// the node between node and node->left->left will be removed
 				OpNode* to_free = node->left;
 				// replace node with node->left
@@ -68,10 +70,9 @@ bool ReduceUnitaryArithmeticNodes(OpNode* node, bool is_root) {
 				*node = *node->left;
 				node->not_flag = not_flag;
 				node->factor = factor;
-				if (node->left->operand_count > 0)
+				if (node->left->left)
 					node->value = value;
 				// remove the node between node and node->left->left
-				to_free->operand_count = 0;
 				to_free->left = nullptr;
 				to_free->right = nullptr;
 				delete to_free;
@@ -95,7 +96,7 @@ void ReduceUnitaryArithmeticNodesR2M(OpNode* node) {
 		ReduceUnitaryArithmeticNodesR2M(node->left);
 	if (node->right)
 		ReduceUnitaryArithmeticNodesR2M(node->right);
-	if (node->operand_count > 0 && node->left) {
+	if (node->left) {
 		if (node->type == ZYDIS_OPERAND_TYPE_REGISTER &&
 			node->left->type == ZYDIS_OPERAND_TYPE_MEMORY) {
 			if (node->op == ZYDIS_MNEMONIC_NOT ||
@@ -116,11 +117,11 @@ bool ReduceFakeBinaryNodes(OpNode* node) {
 	if (node->right)
 		modified |= ReduceFakeBinaryNodes(node->right);
 	// only deal with leaves
-	if (node->left && node->left->operand_count == 0 &&
-		node->right && node->right->operand_count == 0) {
+	if (node->left && node->left->left == nullptr && node->left->right == nullptr &&
+		node->right && node->right->left == nullptr && node->right->right == nullptr) {
 		// simplify only when node->left and node->right both exist and are of the same value
 		bool same_operands = false;
-		if (node->operand_count == 2 && node->left && node->right) {
+		if (node->left && node->right) {
 			if (node->left->type == node->right->type && node->left->addr == node->right->addr) {
 				same_operands = true;
 			}
@@ -150,7 +151,7 @@ void ReduceOr2And(OpNode* node) {
 		ReduceOr2And(node->right);
 	// A or B == not (not A and not B)
 	// the reduced expression is unique for equilvalent formulas
-	if (node->operand_count == 2 && node->op == ZYDIS_MNEMONIC_OR && node->left && node->right) {
+	if (node->op == ZYDIS_MNEMONIC_OR && node->left && node->right) {
 		node->op = ZYDIS_MNEMONIC_AND;
 		node->not_flag ^= 1;
 		node->left->not_flag ^= 1;
@@ -168,7 +169,7 @@ bool ReduceMakeBinaryTree(OpNode* node) {
 		modified |= ReduceMakeBinaryTree(node->left);
 	if (node->right)
 		modified |= ReduceMakeBinaryTree(node->right);
-	if (node->operand_count == 1 && node->left) {
+	if (node->left && node->right == nullptr) {
 		if (node->op == ZYDIS_MNEMONIC_NOT) {
 			;
 		}
@@ -208,12 +209,12 @@ bool ReduceMatchXor(OpNode* node) {
 	if (node->right)
 		modified |= ReduceMatchXor(node->right);
 	// A xor B == not (not (not A and B) and not (A and not A))
-	if (node->operand_count == 2 && node->op == ZYDIS_MNEMONIC_AND &&
-		node->not_flag && node->factor == 1 && node->left && node->right &&
-		node->left->operand_count == 2 && node->left->op == ZYDIS_MNEMONIC_AND &&
-		node->left->not_flag && node->left->factor == 1 && node->left->left && node->left->right &&
-		node->right->operand_count == 2 && node->right->op == ZYDIS_MNEMONIC_AND &&
-		node->right->not_flag && node->right->factor == 1 && node->right->left && node->right->right) {
+	if (node->left && node->right && node->op == ZYDIS_MNEMONIC_AND &&
+		node->not_flag && node->factor == 1 &&
+		node->left->left && node->left->right && node->left->op == ZYDIS_MNEMONIC_AND &&
+		node->left->not_flag && node->left->factor == 1 &&
+		node->right->left && node->right->right && node->right->op == ZYDIS_MNEMONIC_AND &&
+		node->right->not_flag && node->right->factor == 1) {
 		OpNode* A1 = nullptr;
 		OpNode* A2 = nullptr;
 		OpNode* B1 = nullptr;
